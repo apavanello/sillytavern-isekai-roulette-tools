@@ -1,31 +1,32 @@
 /*
- * Isekai Roulette Tools v1.1 — extensão do SillyTavern
+ * Isekai Roulette Tools v1.2 — extensão do SillyTavern
  *
- * Tools de "dados honestos" + game engine do card
+ * Tools de "dados honestos" + game engine + PAINEL DE EDIÇÃO para o card
  * "Nya Lumenveil — Isekai Roulette (Veyrath) [Tools]".
  *
- * Cada spin devolve, JUNTO do sorteio, o capítulo certo do codex oficial
- * (regras de design do tier / pool de raças da raridade / cenários elegíveis
- * da dificuldade). Assim o lorebook do card fica só com lore de mundo —
- * sem palavras-chave genéricas disparando contexto à toa.
- *
- * Sorteios rodam no navegador (crypto.getRandomValues, sem viés) e cada
- * chamada aparece visível no chat como tool call.
+ * - Cada spin devolve o sorteio + o capítulo certo do codex (forja/pool/cenários)
+ * - Painel em Extensions: edite raças, tiers, cenários, regras, alinhamento
+ *   e as ODDS direto na interface — salvo nas settings do ST (sem tocar em código)
+ * - Sorteios no navegador (crypto.getRandomValues) e auditáveis no chat
  *
  * Requer: SillyTavern com Function Calling + API que repasse tools.
  */
 
 import { FORGE, RACE_RULES, RACE_POOLS, ENTRY_RULES, ENTRY_SCENARIOS, ALIGNMENT_CATALOGUE } from './codex-data.js';
 
-// ====== ODDS (pesos "por 100" — edite à vontade) ======
-const TIER_WEIGHTS = { 'F': 8, 'E': 14, 'D': 20, 'C': 18, 'B': 15, 'A': 10, 'S': 7, 'SS': 5, 'SSS': 2, 'SSS+': 1 };
-const RARITY_WEIGHTS = { 'Comum': 34, 'Incomum': 27, 'Raro': 18, 'Muito Raro': 9, 'Abençoado': 5, 'Épico': 3, 'Lendário': 2, 'Mítico': 1, 'Amaldiçoado': 1 };
-const ENTRY_WEIGHTS = { 'F': 10, 'E': 15, 'D': 20, 'C': 20, 'B': 15, 'A': 10, 'S': 6, 'SS': 3, 'SS+': 1 };
+// ====== ODDS padrão (editáveis pelo painel; pesos "por 100") ======
+let TIER_WEIGHTS = { 'F': 8, 'E': 14, 'D': 20, 'C': 18, 'B': 15, 'A': 10, 'S': 7, 'SS': 5, 'SSS': 2, 'SSS+': 1 };
+let RARITY_WEIGHTS = { 'Comum': 34, 'Incomum': 27, 'Raro': 18, 'Muito Raro': 9, 'Abençoado': 5, 'Épico': 3, 'Lendário': 2, 'Mítico': 1, 'Amaldiçoado': 1 };
+let ENTRY_WEIGHTS = { 'F': 10, 'E': 15, 'D': 20, 'C': 20, 'B': 15, 'A': 10, 'S': 6, 'SS': 3, 'SS+': 1 };
 
 const FINAL = '(Sorteio honesto no cliente — FINAL: anuncie o resultado cru ANTES do flavor; nunca altere, ignore ou suavize.)';
 const PREFIX = '[ISEKAI ROULETTE] ';
 
-/** Inteiro uniforme em [min, max] com RNG criptográfico e rejeição de viés. */
+const TIERS = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+'];
+const RARITIES = ['Comum', 'Incomum', 'Raro', 'Muito Raro', 'Abençoado', 'Épico', 'Lendário', 'Mítico', 'Amaldiçoado'];
+const LETTERS = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SS+'];
+
+// ================================================================ RNG
 function randInt(min, max) {
     const range = max - min + 1;
     const limit = Math.floor(0x100000000 / range) * range;
@@ -38,7 +39,6 @@ function randInt(min, max) {
     return min + (x % range);
 }
 
-/** Sorteio ponderado: weights = { rotulo: peso_inteiro }. */
 function weightedPick(weights) {
     const entries = Object.entries(weights);
     const total = entries.reduce((s, [, w]) => s + w, 0);
@@ -50,20 +50,191 @@ function weightedPick(weights) {
     return entries[entries.length - 1][0];
 }
 
-/** Cenários elegíveis para uma dificuldade, com fallback para a vizinha. */
-function eligibleScenarios(letter) {
-    if (ENTRY_SCENARIOS[letter]?.length) return { list: ENTRY_SCENARIOS[letter], note: '' };
-    // SS não tem cenário catalogado: usa S e deixa gerar acima se apropriado
-    return { list: ENTRY_SCENARIOS['S'] || [], note: ' (nenhum cenário catalogado nesta dificuldade exata: use os de S como referência de tom ou gere um cenário equivalente pelas regras)' };
+// ================================================================ dados efetivos (defaults + overrides do painel)
+let DATA = null;
+
+function parseScenarios(text) {
+    const out = [];
+    let cur = null;
+    for (const line of String(text).split('\n')) {
+        const m = line.trim().match(/^(.+?)\s*\/\s*(.+?)\s*\/\s*(F|E|D|C|B|A|S|SS\+|SSS\+?)\s*$/);
+        if (m) {
+            if (cur) out.push(cur);
+            cur = { name: m[1].trim(), region: m[2].trim(), desc: '' };
+        } else if (cur && line.trim()) {
+            cur.desc = (cur.desc ? cur.desc + ' ' : '') + line.trim();
+        }
+    }
+    if (cur) out.push(cur);
+    return out;
 }
 
-function setup() {
-    const ctx = window.SillyTavern?.getContext?.();
-    if (!ctx?.registerFunctionTool) {
-        console.error('[Isekai Roulette Tools] SillyTavern sem suporte a function tools — atualize o ST (tool-calling).');
-        return;
+function buildData(o) {
+    const ov = o || {};
+    const pools = { ...RACE_POOLS };
+    for (const r of RARITIES) if (ov[`pool:${r}`] != null) pools[r] = ov[`pool:${r}`];
+    const tiers = { ...FORGE.tiers };
+    for (const t of TIERS) if (ov[`tier:${t}`] != null) tiers[t] = ov[`tier:${t}`];
+    const scenarios = {};
+    for (const L of Object.keys(ENTRY_SCENARIOS)) scenarios[L] = ENTRY_SCENARIOS[L].slice();
+    for (const L of LETTERS) if (ov[`scen:${L}`] != null) scenarios[L] = parseScenarios(ov[`scen:${L}`]);
+    return {
+        pools,
+        tiers,
+        scenarios,
+        rulesRace: ov['rules:race'] ?? RACE_RULES,
+        rulesEntry: ov['rules:entry'] ?? ENTRY_RULES,
+        alignment: ov['alignment'] ?? ALIGNMENT_CATALOGUE,
+        forgeDesign: ov['forge:design'] ?? FORGE.design,
+        forgeLow: ov['forge:low'] ?? FORGE.low,
+    };
+}
+
+function effectiveContent(key) {
+    const d = DATA;
+    if (key.startsWith('pool:')) return d.pools[key.slice(5)] ?? '';
+    if (key.startsWith('tier:')) return d.tiers[key.slice(5)] ?? '';
+    if (key.startsWith('scen:')) {
+        const L = key.slice(5);
+        return (d.scenarios[L] || []).map(s => `${s.name} / ${s.region} / ${L}\n${s.desc}`).join('\n\n');
+    }
+    if (key === 'rules:race') return d.rulesRace;
+    if (key === 'rules:entry') return d.rulesEntry;
+    if (key === 'alignment') return d.alignment;
+    if (key === 'forge:design') return d.forgeDesign;
+    if (key === 'forge:low') return d.forgeLow;
+    return '';
+}
+
+// ================================================================ categorias do painel
+function categoryList() {
+    const groups = [];
+    groups.push({ label: 'Raças — conjuntos por raridade', items: RARITIES.map(r => ({ key: `pool:${r}`, label: r })) });
+    groups.push({ label: 'Forja — expectativa por tier', items: TIERS.map(t => ({ key: `tier:${t}`, label: t })) });
+    groups.push({ label: 'Forja — regras gerais', items: [
+        { key: 'forge:design', label: 'Design central' },
+        { key: 'forge:low', label: 'Bom design de nível baixo' },
+    ] });
+    groups.push({ label: 'Cenários de entrada por dificuldade', items: LETTERS.map(L => ({ key: `scen:${L}`, label: L })) });
+    groups.push({ label: 'Regras', items: [
+        { key: 'rules:race', label: 'Roleta de Raça' },
+        { key: 'rules:entry', label: 'Entrada no Mundo' },
+    ] });
+    groups.push({ label: 'Etapa 3', items: [{ key: 'alignment', label: 'Catálogo de Alinhamentos' }] });
+    return groups;
+}
+
+// ================================================================ painel (settings UI)
+function initSettingsUI(settings, save) {
+    const html = `
+    <div class="isekai-roulette-tools">
+        <div class="inline-drawer">
+            <div class="inline-drawer-toggle inline-drawer-header">
+                <b>Isekai Roulette Tools</b>
+                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+            </div>
+            <div class="inline-drawer-content">
+                <label><small>Categoria (fixas) — edite os itens:</small></label>
+                <select id="isekai_category" class="text_pole"></select>
+                <div><small id="isekai_status" style="opacity:.7"></small></div>
+                <textarea id="isekai_content" rows="14" class="text_pole textarea_compact" style="width:100%; font-size:12px; white-space:pre;"></textarea>
+                <div class="flex1 flexGap5">
+                    <div id="isekai_save" class="menu_button menu_button_wide" title="Salva o texto deste item (override)">💾 Salvar item</div>
+                    <div id="isekai_reset" class="menu_button menu_button_wide" title="Volta este item ao padrão do codex">↩ Restaurar item</div>
+                </div>
+                <hr>
+                <label><small>Odds (pesos por 100) — formato <code>F:8, E:14, ...</code></small></label>
+                <div class="flexGap5 flexWrap">
+                    <div style="flex:1"><small>Tier</small><textarea id="isekai_w_tier" rows="2" class="text_pole textarea_compact" style="width:100%; font-size:11px;"></textarea></div>
+                    <div style="flex:1"><small>Raridade</small><textarea id="isekai_w_rarity" rows="2" class="text_pole textarea_compact" style="width:100%; font-size:11px;"></textarea></div>
+                    <div style="flex:1"><small>Entrada</small><textarea id="isekai_w_entry" rows="2" class="text_pole textarea_compact" style="width:100%; font-size:11px;"></textarea></div>
+                </div>
+                <div id="isekai_save_w" class="menu_button menu_button_wide">💾 Salvar odds</div>
+                <hr>
+                <small>Edições valem a partir da próxima rolagem (sem reload). Cenários: uma linha <code>NOME / REGIÃO / LETRA</code> seguida da descrição; múltiplos separados por linha em branco.</small>
+            </div>
+        </div>
+    </div>`;
+    $('#extensions_settings2').append(html);
+
+    const $sel = $('#isekai_category');
+    for (const g of categoryList()) {
+        const og = $('<optgroup>').attr('label', g.label);
+        for (const it of g.items) og.append($('<option>').val(it.key).text(it.label));
+        $sel.append(og);
     }
 
+    const $txt = $('#isekai_content');
+    const $st = $('#isekai_status');
+
+    function refresh() {
+        const key = $sel.val();
+        $txt.val(effectiveContent(key));
+        $st.text(settings.overrides?.[key] != null ? '● editado (override ativo)' : 'padrão do codex');
+    }
+    $sel.on('change', refresh);
+
+    $('#isekai_save').on('click', () => {
+        const key = $sel.val();
+        settings.overrides = settings.overrides || {};
+        settings.overrides[key] = $txt.val();
+        save();
+        DATA = buildData(settings.overrides);
+        refresh();
+        toastr.success(`Item "${key}" salvo — vale na próxima rolagem.`);
+    });
+
+    $('#isekai_reset').on('click', () => {
+        const key = $sel.val();
+        if (settings.overrides) delete settings.overrides[key];
+        save();
+        DATA = buildData(settings.overrides);
+        refresh();
+        toastr.info(`Item "${key}" restaurado ao padrão.`);
+    });
+
+    const serialize = w => Object.entries(w).map(([k, v]) => `${k}:${v}`).join(', ');
+    $('#isekai_w_tier').val(serialize(TIER_WEIGHTS));
+    $('#isekai_w_rarity').val(serialize(RARITY_WEIGHTS));
+    $('#isekai_w_entry').val(serialize(ENTRY_WEIGHTS));
+
+    function parseWeights(text, allowed) {
+        const out = {};
+        for (const part of String(text).split(/[,\n]/)) {
+            const m = part.trim().match(/^(.+?)\s*[:=]\s*(\d+)\s*$/);
+            if (!m) continue;
+            const name = m[1].trim();
+            if (allowed.includes(name)) out[name] = parseInt(m[2], 10);
+        }
+        return out;
+    }
+
+    $('#isekai_save_w').on('click', () => {
+        const t = parseWeights($('#isekai_w_tier').val(), TIERS);
+        const r = parseWeights($('#isekai_w_rarity').val(), RARITIES);
+        const e = parseWeights($('#isekai_w_entry').val(), LETTERS);
+        if (Object.keys(t).length < 2 || Object.keys(r).length < 2 || Object.keys(e).length < 2) {
+            toastr.warning('Odds inválidas: use o formato "F:8, E:14, ..." com pelo menos 2 entradas válidas por linha.');
+            return;
+        }
+        TIER_WEIGHTS = t; RARITY_WEIGHTS = r; ENTRY_WEIGHTS = e;
+        settings.weights = { tier: t, rarity: r, entry: e };
+        save();
+        toastr.success('Odds salvas — valem na próxima rolagem.');
+    });
+
+    // carrega odds salvas
+    if (settings.weights) {
+        if (settings.weights.tier) TIER_WEIGHTS = settings.weights.tier;
+        if (settings.weights.rarity) RARITY_WEIGHTS = settings.weights.rarity;
+        if (settings.weights.entry) ENTRY_WEIGHTS = settings.weights.entry;
+    }
+
+    refresh();
+}
+
+// ================================================================ tools
+function registerTools(ctx) {
     ctx.registerFunctionTool({
         name: 'roll_dice',
         displayName: 'Roll Dice',
@@ -101,11 +272,11 @@ function setup() {
             const parts = [
                 `${PREFIX}Unique Skill Tier: ${tier}. ${FINAL}`,
                 ``,
-                `EXPECTATIVA DO TIER ${tier}: ${FORGE.tiers[tier] || ''}`,
-                `DESIGN CENTRAL: ${FORGE.design}`,
+                `EXPECTATIVA DO TIER ${tier}: ${DATA.tiers[tier] || ''}`,
+                `DESIGN CENTRAL: ${DATA.forgeDesign}`,
             ];
-            if (['F', 'E', 'D'].includes(tier) && FORGE.low) {
-                parts.push(`BOM DESIGN DE NÍVEL BAIXO (use um ou mais):\n${FORGE.low}`);
+            if (['F', 'E', 'D'].includes(tier) && DATA.forgeLow) {
+                parts.push(`BOM DESIGN DE NÍVEL BAIXO (use um ou mais):\n${DATA.forgeLow}`);
             }
             parts.push('Regras da forja: gere uma Perícia Única NOVA dentro deste tier — verbo concreto + alvo concreto + resultado concreto + custo/limite real. Famílias exemplo são inspiração, NUNCA menu; não role dado para escolher família.');
             return parts.join('\n');
@@ -119,11 +290,11 @@ function setup() {
         parameters: { type: 'object', properties: {}, required: [] },
         action: async () => {
             const rarity = weightedPick(RARITY_WEIGHTS);
-            const pool = RACE_POOLS[rarity] || '(pool não catalogado: gere uma raça que se encaixe na raridade, em Veyrath e nos mesmos padrões de equilíbrio)';
+            const pool = DATA.pools[rarity] || '(pool não catalogado: gere uma raça que se encaixe na raridade, em Veyrath e nos mesmos padrões de equilíbrio)';
             return [
                 `${PREFIX}Race Rarity: ${rarity}. ${FINAL}`,
                 ``,
-                `REGRAS DA ROLETA DE RAÇA:\n${RACE_RULES}`,
+                `REGRAS DA ROLETA DE RAÇA:\n${DATA.rulesRace}`,
                 ``,
                 `CONJUNTO DE RAÇAS — ${rarity.toUpperCase()}:\n${pool}`,
             ].join('\n');
@@ -137,12 +308,13 @@ function setup() {
         parameters: { type: 'object', properties: {}, required: [] },
         action: async () => {
             const letter = weightedPick(ENTRY_WEIGHTS);
-            const { list, note } = eligibleScenarios(letter);
-            const scen = list.map(s => `- ${s.name} / ${s.region}: ${s.desc}`).join('\n');
+            const list = DATA.scenarios[letter];
+            const note = (list && list.length) ? '' : ' (nenhum cenário catalogado nesta dificuldade exata: use os de S como referência de tom ou gere um cenário equivalente pelas regras)';
+            const scen = (list && list.length ? list : (DATA.scenarios['S'] || [])).map(s => `- ${s.name} / ${s.region}: ${s.desc}`).join('\n');
             return [
                 `${PREFIX}World Entry Difficulty: ${letter}. ${FINAL}${note}`,
                 ``,
-                `REGRAS DA ENTRADA NO MUNDO:\n${ENTRY_RULES}`,
+                `REGRAS DA ENTRADA NO MUNDO:\n${DATA.rulesEntry}`,
                 ``,
                 `CENÁRIOS ELEGÍVEIS (${letter}):\n${scen || '(gerar pela regra)'}`,
                 ``,
@@ -156,12 +328,21 @@ function setup() {
         displayName: 'Get Starter Alignment Catalogue',
         description: 'Returns the official Starter Alignment catalogue (Step 3). The player CHOOSES an alignment — it is never randomly assigned unless explicitly requested. Call when Step 3 begins.',
         parameters: { type: 'object', properties: {}, required: [] },
-        action: async () => `${PREFIX}Catálogo de Alinhamento Inicial (Etapa 3 — {{user}} ESCOLHE):\n\n${ALIGNMENT_CATALOGUE}`,
+        action: async () => `${PREFIX}Catálogo de Alinhamento Inicial (Etapa 3 — {{user}} ESCOLHE):\n\n${DATA.alignment}`,
     });
 
-    console.log('[Isekai Roulette Tools] 5 tools registradas: roll_dice, spin_unique_skill_tier, spin_race_rarity, spin_world_entry_difficulty, get_starter_alignment_catalogue');
+    console.log('[Isekai Roulette Tools] 5 tools registradas + painel de edição ativo');
 }
 
+// ================================================================ bootstrap
 jQuery(async () => {
-    setup();
+    const ctx = window.SillyTavern?.getContext?.();
+    if (!ctx?.registerFunctionTool) {
+        console.error('[Isekai Roulette Tools] SillyTavern sem suporte a function tools — atualize o ST (tool-calling).');
+        return;
+    }
+    const settings = ctx.extensionSettings['isekaiRouletteTools'] ??= {};
+    DATA = buildData(settings.overrides);
+    initSettingsUI(settings, () => ctx.saveSettingsDebounced());
+    registerTools(ctx);
 });

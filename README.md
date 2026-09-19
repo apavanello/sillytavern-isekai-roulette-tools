@@ -1,8 +1,9 @@
-# Isekai Roulette Tools — extensão do SillyTavern (v1.1)
+# Isekai Roulette Tools — extensão do SillyTavern (v1.2)
 
-Extensão que registra **tools de dados honestos + o game engine** para o card
-"Nya Lumenveil — Isekai Roulette (Veyrath) [Tools]", replicando o sistema de
-Functions do ISEKAI ZERO com o *function calling* nativo do SillyTavern:
+Extensão que registra **tools de dados honestos + o game engine + painel de
+edição** para o card "Nya Lumenveil — Isekai Roulette (Veyrath) [Tools]",
+replicando o sistema de Functions do ISEKAI ZERO com o *function calling*
+nativo do SillyTavern:
 
 | Tool | O que retorna |
 |---|---|
@@ -11,6 +12,21 @@ Functions do ISEKAI ZERO com o *function calling* nativo do SillyTavern:
 | `spin_race_rarity` | Raridade sorteada **+ regras da roleta + pool de raças oficial daquela banda** |
 | `spin_world_entry_difficulty` | Dificuldade sorteada **+ regras + cenários elegíveis do catálogo oficial** |
 | `get_starter_alignment_catalogue` | Catálogo oficial de Alinhamentos Iniciais (Etapa 3, escolha do jogador) |
+
+**Painel de edição (v1.2):** na aba **Extensions → Isekai Roulette Tools**
+você edita, sem tocar em código:
+
+- **Raças** por raridade (Comum → Amaldiçoado) — adicione/edite linhas
+- **Forja**: expectativa de cada tier (F→SSS+), design central e design baixo
+- **Cenários** por dificuldade (F→SS+) — formato `NOME / REGIÃO / LETRA` + descrição
+- **Regras** da Roleta de Raça e da Entrada no Mundo
+- **Catálogo de Alinhamentos**
+- **Odds** (pesos por 100) das três roletas — formato `F:8, E:14, ...`
+
+Tudo salvo nas settings do ST ("override"), aplicado **na próxima rolagem,
+sem reload**, com botão de restaurar item por item ao padrão do codex.
+O arquivo `codex-data.js` permanece sendo o padrão (gerado por
+`build_extension.py`) — o painel só sobrepõe.
 
 **Arquitetura v1.1:** as tabelas do codex viajam DENTRO do retorno das tools
 (arquivo `codex-data.js`, gerado do conteúdo oficial) — o lorebook do card fica
@@ -38,8 +54,9 @@ reimporte o card tools (o lorebook mudou para o formato slim).
 
 ## Ajustar as odds
 
-No topo do `index.js`: `TIER_WEIGHTS`, `RARITY_WEIGHTS`, `ENTRY_WEIGHTS`
-(pesos "por 100"). Edite, F5 — a próxima rolagem já usa os pesos novos.
+Pelo painel (Extensions → Isekai Roulette Tools → Odds), formato `F:8, E:14, ...`.
+Salva nas settings e vale na próxima rolagem — ou edite `TIER_WEIGHTS` & cia
+no topo do `index.js` se preferir no código.
 
 ## Custo de tokens (resumo)
 

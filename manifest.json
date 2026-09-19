@@ -1,0 +1,12 @@
+{
+    "display_name": "Isekai Roulette Tools",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "",
+    "author": "apavanello",
+    "version": "1.0.0",
+    "homePage": "",
+    "auto_update": false
+}

@@ -1,53 +1,56 @@
-# Isekai Roulette Tools — extensão do SillyTavern
+# Isekai Roulette Tools — extensão do SillyTavern (v1.1)
 
-Extensão que registra **4 tools de dados honestos** para o card
-"Nya Lumenveil — Isekai Roulette (Veyrath)", replicando a Dice Roll Function
-do ISEKAI ZERO com o *function calling* nativo do SillyTavern:
+Extensão que registra **tools de dados honestos + o game engine** para o card
+"Nya Lumenveil — Isekai Roulette (Veyrath) [Tools]", replicando o sistema de
+Functions do ISEKAI ZERO com o *function calling* nativo do SillyTavern:
 
-| Tool | O que faz |
+| Tool | O que retorna |
 |---|---|
-| `roll_dice(sides, count)` | Rola dados de N lados (crítico no 20 / falha no 1) |
-| `spin_unique_skill_tier` | Sorteia o tier da Habilidade Única (F→SSS+, ponderado) |
-| `spin_race_rarity` | Sorteia a raridade da raça (Comum→Amaldiçoado, ponderado) |
-| `spin_world_entry_difficulty` | Sorteia a dificuldade da entrada (F→SS+, ponderado) |
+| `roll_dice(sides, count)` | Números de dados (crítico no 20 / falha no 1) |
+| `spin_unique_skill_tier` | Tier sorteado **+ expectativa do tier + regras de design da Forja oficial** |
+| `spin_race_rarity` | Raridade sorteada **+ regras da roleta + pool de raças oficial daquela banda** |
+| `spin_world_entry_difficulty` | Dificuldade sorteada **+ regras + cenários elegíveis do catálogo oficial** |
+| `get_starter_alignment_catalogue` | Catálogo oficial de Alinhamentos Iniciais (Etapa 3, escolha do jogador) |
+
+**Arquitetura v1.1:** as tabelas do codex viajam DENTRO do retorno das tools
+(arquivo `codex-data.js`, gerado do conteúdo oficial) — o lorebook do card fica
+só com lore de mundo, sem palavras-chave genéricas ("tier", "Comum"...)
+disparando contexto à toa. Bônus: o modelo recebe o capítulo certo na MESMA
+geração do sorteio (o lorebook por chave só disparava na geração seguinte).
 
 Os sorteios acontecem **no seu navegador** (`crypto.getRandomValues`, sem viés)
-e o resultado volta para o modelo como retorno da tool — ele só narra. Cada
-chamada aparece **visível no chat** como tool call (auditável).
+e cada chamada aparece **visível no chat** como tool call (auditável).
+
+> `codex-data.js` é gerado por `build_extension.py` a partir do codex real —
+> não edite à mão.
 
 ## Instalação
 
-1. Copie a pasta `st-extension-isekai-roulette` inteira para:
-   ```
-   SillyTavern/public/scripts/extensions/third-party/
-   ```
-2. Recarregue o SillyTavern (F5; se instalou com o server parado, suba de novo)
-3. No console do navegador (F12) deve aparecer:
-   `[Isekai Roulette Tools] 4 tools registradas...`
-4. Na configuração da IA, deixe **Function Calling ativado** (o toggle que você
-   já vê nas configs de prompt)
-5. Importe o card **`00_Isekai_Roulette_System_tools.png`** (a variante que
-   instrui o modelo a chamar as tools — não use a versão de macros junto,
-   senão o modelo recebe duas instruções de rolagem)
+1. No ST: **Extensions → Install extension** → cole:
+   `https://github.com/apavanello/sillytavern-isekai-roulette-tools`
+2. Recarregue (F5) — console deve mostrar:
+   `[Isekai Roulette Tools] 5 tools registradas...`
+3. **Function Calling ativado** nas configs da IA
+4. Importe o card **`00_Isekai_Roulette_System_tools.png`** (v1.1) e jogue com ele
 
-## Requisitos
-
-- SillyTavern com tool-calling nativo (você tem — o toggle aparece)
-- API/modelo que aceite `tools`: GLM via endpoint OpenAI-compatível com
-  function calling habilitado funciona; Claude/OpenAI/Gemini também
-- Importante: no endpoint custom, ative a opção de repassar tools se houver
+Atualizando da v1.0: Extensions → Manage → Update nesta extensão, F5, e
+reimporte o card tools (o lorebook mudou para o formato slim).
 
 ## Ajustar as odds
 
-No topo do `index.js` tem os pesos "por 100" nas três tabelas
-(`TIER_WEIGHTS`, `RARITY_WEIGHTS`, `ENTRY_WEIGHTS`). Edite, salve, F5.
+No topo do `index.js`: `TIER_WEIGHTS`, `RARITY_WEIGHTS`, `ENTRY_WEIGHTS`
+(pesos "por 100"). Edite, F5 — a próxima rolagem já usa os pesos novos.
 
-## Se algo não funcionar
+## Custo de tokens (resumo)
 
-- **Tools não aparecem**: confira o console (F12) — se aparecer a mensagem de
-  erro do ST sem suporte, atualize o SillyTavern
-- **Modelo não chama as tools**: verifique se o card importado é o
-  `_tools.png`; alguns modelos precisam do aviso explícito — escreva
-  "puxa a alavanca (role com a tool)" no primeiro pull até ele pegar o hábito
-- **Tool call aparece mas a resposta ignora o valor**: reforce no chat
-  ("the dice are final") — é aderência do modelo, não da extensão
+- Definições das tools: ~700 tokens em toda geração
+- Cada spin devolve o capítulo (300–700 tokens) que fica no histórico —
+  injetado UMA vez, com precisão, versus re-injeção por gatilho de palavra
+
+## Troubleshooting
+
+- **Tools não aparecem**: console F12; ST sem suporte = atualizar
+- **Modelo não chama**: confira se o card é o `_tools.png`; nudgue
+  "puxa a alavanca (role com a tool)" até pegar o hábito
+- **SS em World Entry não tem cenário catalogado**: a tool devolve os de S
+  como referência + nota para gerar equivalente — comportamento esperado

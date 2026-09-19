@@ -11,7 +11,7 @@ nativo do SillyTavern:
 | `spin_unique_skill_tier` | Tier sorteado **+ expectativa do tier + regras de design da Forja oficial** |
 | `spin_race_rarity` | Raridade sorteada **+ regras da roleta + pool de raças oficial daquela banda** |
 | `spin_world_entry_difficulty` | Dificuldade sorteada **+ regras + cenários elegíveis do catálogo oficial** |
-| `get_starter_alignment_catalogue` | Catálogo oficial de Alinhamentos Iniciais (Etapa 3, escolha do jogador) |
+| `spin_starter_alignment` | Sorteia **1 kit uniformemente (1/N, sem raridade)** com o pacote oficial — Etapa 3 agora é rolagem |
 
 **Painel de edição (v1.2):** na aba **Extensions → Isekai Roulette Tools**
 você edita, sem tocar em código:

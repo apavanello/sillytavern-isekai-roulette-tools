@@ -69,6 +69,22 @@ function parseScenarios(text) {
     return out;
 }
 
+function parseKits(text) {
+    const kits = [];
+    let cur = null;
+    for (const line of String(text).split('\n')) {
+        const m = line.match(/^##\s+(.+?)\s*$/);
+        if (m) {
+            if (cur) kits.push(cur);
+            cur = { name: m[1].trim(), content: '' };
+        } else if (cur) {
+            cur.content += (cur.content ? '\n' : '') + line;
+        }
+    }
+    if (cur) kits.push(cur);
+    return kits.filter(k => k.name);
+}
+
 function buildData(o) {
     const ov = o || {};
     const pools = { ...RACE_POOLS };
@@ -324,11 +340,22 @@ function registerTools(ctx) {
     });
 
     ctx.registerFunctionTool({
-        name: 'get_starter_alignment_catalogue',
-        displayName: 'Get Starter Alignment Catalogue',
-        description: 'Returns the official Starter Alignment catalogue (Step 3). The player CHOOSES an alignment — it is never randomly assigned unless explicitly requested. Call when Step 3 begins.',
+        name: 'spin_starter_alignment',
+        displayName: 'Spin Starter Alignment',
+        description: 'Uniformly rolls ONE Starter Alignment kit (Step 3): each of the N kits has exactly 1/N chance, no rarity weighting. Returns the rolled kit with its official package. Call on Step 3 or its reroll.',
         parameters: { type: 'object', properties: {}, required: [] },
-        action: async () => `${PREFIX}Catálogo de Alinhamento Inicial (Etapa 3 — {{user}} ESCOLHE):\n\n${DATA.alignment}`,
+        action: async () => {
+            const kits = parseKits(DATA.alignment);
+            if (!kits.length) return `${PREFIX}Starter Alignment: (catálogo vazio — gere um pacote iniciante equivalente). ${FINAL}`;
+            const kit = kits[randInt(1, kits.length) - 1];
+            return [
+                `${PREFIX}Starter Alignment: ${kit.name} (sorteio uniforme 1/${kits.length}). ${FINAL}`,
+                ``,
+                `REGRAS: Alinhamentos Iniciais são pacotes para iniciantes — NÃO são classes verdadeiras: não aumentam Nível, não modificam atributos básicos, não garantem maestria e não bloqueiam crescimento futuro. Neste setup o Alinhamento é SORTEADO; reroll gasta 1 das 3 Rolagens Compartilhadas.`,
+                ``,
+                `KIT SORTEADO — ${kit.name}:\n${kit.content.trim()}`,
+            ].join('\n');
+        },
     });
 
     console.log('[Isekai Roulette Tools] 5 tools registradas + painel de edição ativo');

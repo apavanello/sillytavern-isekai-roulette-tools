@@ -71,3 +71,20 @@ no topo do `index.js` se preferir no código.
   "puxa a alavanca (role com a tool)" até pegar o hábito
 - **SS em World Entry não tem cenário catalogado**: a tool devolve os de S
   como referência + nota para gerar equivalente — comportamento esperado
+
+## Por que o "Update" às vezes não muda nada (e como resolvemos)
+
+O número de versão no Manage Extensions vem da leitura do **servidor** (disco),
+mas o **código** chega pelo cache HTTP do navegador — e módulos importados
+dinamicamente escapam até do Ctrl+F5. Sintoma clássico: versão nova listada,
+comportamento antigo rodando.
+
+A partir da **v1.3.2** a extensão tem um loader imutável (`index.js`) que
+carrega `main.js` e `codex-data.js` com cache-buster (`?v=<timestamp>`):
+update = sempre pega, sem limpar cache. A **única** vez que você ainda precisa
+limpar cache manualmente é na transição PARA a 1.3.2 (o index.js antigo
+grande ainda está em cache):
+
+1. Manage extensions → **Update** (pega a 1.3.2)
+2. **F12 → Network → marcar "Disable cache" → F5** (uma última vez)
+3. Daqui pra frente: Update + F5 comum basta

@@ -199,8 +199,13 @@ function initSettingsUI(settings, save) {
 
     $('#isekai_save').on('click', () => {
         const key = $sel.val();
+        const val = $txt.val();
+        const prev = settings.overrides?.[key];
+        if (!val.trim() && prev && String(prev).trim() && !confirm('O texto está VAZIO e já existe um override salvo para este item.\nSalvar agora vai APAGAR o conteúdo salvo. Continuar?')) {
+            return;
+        }
         settings.overrides = settings.overrides || {};
-        settings.overrides[key] = $txt.val();
+        settings.overrides[key] = val;
         save();
         DATA = buildData(settings.overrides);
         refresh();
@@ -389,6 +394,7 @@ const EXT_VERSION = '1.3.3';
         dump(key) {
             const text = effectiveContent(key);
             const state = settings.overrides?.[key] != null ? 'override ativo' : 'padrão do codex';
+            if (!text.trim()) console.warn(`[Isekai Roulette] ${key} (${state}) está VAZIO.`);
             console.log(`[Isekai Roulette] ${key} (${state}):\n${text}`);
             if (navigator.clipboard?.writeText) {
                 navigator.clipboard.writeText(text)
@@ -402,6 +408,30 @@ const EXT_VERSION = '1.3.3';
             return { items: { ...settings.overrides }, weights: settings.weights ?? null };
         },
         data: () => DATA,
+        /** Define programaticamente um override e salva. Ex.: IsekaiRoulette.set('scen:SS', texto) */
+        set(key, text) {
+            settings.overrides = settings.overrides || {};
+            settings.overrides[key] = String(text ?? '');
+            ctx.saveSettingsDebounced();
+            DATA = buildData(settings.overrides);
+            const $c = jQuery('#isekai_category');
+            if ($c.length) { $c.val(key).trigger('change'); }
+            console.log(`[Isekai Roulette] override "${key}" salvo (${settings.overrides[key].length} chars).`);
+            return true;
+        },
+        /** Restaura um backup gerado por overrides(). Ex.: IsekaiRoulette.restore({items:{...}, weights:{...}}) */
+        restore(backup) {
+            if (!backup || typeof backup !== 'object') return console.warn('[Isekai Roulette] backup inválido');
+            settings.overrides = settings.overrides || {};
+            if (backup.items) Object.assign(settings.overrides, backup.items);
+            if (backup.weights) settings.weights = backup.weights;
+            ctx.saveSettingsDebounced();
+            DATA = buildData(settings.overrides);
+            console.log(`[Isekai Roulette] restaurado: ${Object.keys(settings.overrides).length} overrides.`);
+            const $c = jQuery('#isekai_category');
+            if ($c.length) { $c.trigger('change'); }
+            return true;
+        },
     };
     console.log(`[Isekai Roulette Tools] v${EXT_VERSION} carregada — 5 tools + painel. Debug: IsekaiRoulette.dump('scen:SS') | IsekaiRoulette.overrides()`);
 })();

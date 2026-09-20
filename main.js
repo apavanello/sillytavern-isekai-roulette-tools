@@ -369,6 +369,8 @@ function registerTools(ctx) {
 }
 
 // ================================================================ bootstrap
+const EXT_VERSION = '1.3.3';
+
 (async () => {
     const ctx = window.SillyTavern?.getContext?.();
     if (!ctx?.registerFunctionTool) {
@@ -379,4 +381,27 @@ function registerTools(ctx) {
     DATA = buildData(settings.overrides);
     initSettingsUI(settings, () => ctx.saveSettingsDebounced());
     registerTools(ctx);
+
+    // Debug global: versão + dumps + backup dos overrides
+    window.IsekaiRoulette = {
+        version: EXT_VERSION,
+        /** Conteúdo efetivo de uma categoria — imprime no console e tenta copiar p/ clipboard. Ex.: IsekaiRoulette.dump('scen:SS') */
+        dump(key) {
+            const text = effectiveContent(key);
+            const state = settings.overrides?.[key] != null ? 'override ativo' : 'padrão do codex';
+            console.log(`[Isekai Roulette] ${key} (${state}):\n${text}`);
+            if (navigator.clipboard?.writeText) {
+                navigator.clipboard.writeText(text)
+                    .then(() => console.log('[Isekai Roulette] conteúdo copiado para a área de transferência.'))
+                    .catch(() => console.warn('[Isekai Roulette] clipboard bloqueado — copie o texto acima manualmente.'));
+            }
+            return text;
+        },
+        /** Todos os overrides salvos (+ odds) — para backup: clique com o direito → "Copy object". */
+        overrides() {
+            return { items: { ...settings.overrides }, weights: settings.weights ?? null };
+        },
+        data: () => DATA,
+    };
+    console.log(`[Isekai Roulette Tools] v${EXT_VERSION} carregada — 5 tools + painel. Debug: IsekaiRoulette.dump('scen:SS') | IsekaiRoulette.overrides()`);
 })();

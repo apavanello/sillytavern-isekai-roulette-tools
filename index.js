@@ -57,7 +57,7 @@ function parseScenarios(text) {
     const out = [];
     let cur = null;
     for (const line of String(text).split('\n')) {
-        const m = line.trim().match(/^(.+?)\s*\/\s*(.+?)\s*\/\s*(F|E|D|C|B|A|S|SS\+|SSS\+?)\s*$/);
+        const m = line.trim().match(/^(.+?)\s*\/\s*(.+?)\s*\/\s*(F|E|D|C|B|A|SSS\+|SS\+|SS|S)\s*$/);
         if (m) {
             if (cur) out.push(cur);
             cur = { name: m[1].trim(), region: m[2].trim(), desc: '' };
@@ -92,12 +92,17 @@ function buildData(o) {
     const tiers = { ...FORGE.tiers };
     for (const t of TIERS) if (ov[`tier:${t}`] != null) tiers[t] = ov[`tier:${t}`];
     const scenarios = {};
+    const scenariosRaw = {};
     for (const L of Object.keys(ENTRY_SCENARIOS)) scenarios[L] = ENTRY_SCENARIOS[L].slice();
-    for (const L of LETTERS) if (ov[`scen:${L}`] != null) scenarios[L] = parseScenarios(ov[`scen:${L}`]);
+    for (const L of LETTERS) if (ov[`scen:${L}`] != null) {
+        scenariosRaw[L] = ov[`scen:${L}`];
+        scenarios[L] = parseScenarios(ov[`scen:${L}`]);
+    }
     return {
         pools,
         tiers,
         scenarios,
+        scenariosRaw,
         rulesRace: ov['rules:race'] ?? RACE_RULES,
         rulesEntry: ov['rules:entry'] ?? ENTRY_RULES,
         alignment: ov['alignment'] ?? ALIGNMENT_CATALOGUE,
@@ -112,6 +117,8 @@ function effectiveContent(key) {
     if (key.startsWith('tier:')) return d.tiers[key.slice(5)] ?? '';
     if (key.startsWith('scen:')) {
         const L = key.slice(5);
+        // fallback: se o override não parseou em nada, mostra o texto cru — nunca sumir
+        if (DATA.scenariosRaw?.[L] != null && !(DATA.scenarios[L] || []).length) return DATA.scenariosRaw[L];
         return (d.scenarios[L] || []).map(s => `${s.name} / ${s.region} / ${L}\n${s.desc}`).join('\n\n');
     }
     if (key === 'rules:race') return d.rulesRace;
